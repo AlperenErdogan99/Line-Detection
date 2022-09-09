@@ -1,2 +1,2 @@
-# Lane-Detection
-Lane detection
+# Line-Detection
+Line detection on MATLAB.

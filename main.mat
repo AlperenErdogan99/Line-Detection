@@ -1,0 +1,92 @@
+    clc ; clear all ; clear workspace ; close all ; 
+%% Giriş İmgesi alınır
+   tic; % Çalışma süresini ölçüyoruz .
+   originImg = imread('sunum_1.jpg');%Giriş imgesi alınır
+   figure(1) ; imshow(originImg); title ('Input Image'); %Giriş imgesi gösterilir
+   originImg = imresize(originImg,0.25);% 1/4 oranında ölçeklenir
+   grayImg = rgb2gray(originImg); %renkli görüntü siyah beyaza çevrilir.
+   [satir,sutun]= size(grayImg); %size (w,h)belirlenir.
+   figure(2) ; imshow(grayImg); title('Gray Image'); %Gray image gösterilir
+   
+   
+%% Ufuk Noktası Tespit edilir 
+
+    norient = 36;
+    %36 adedinde olacak   Gabor çekirdekleri oluşturuluyor imge için .  
+    [convolution, halfKerSize] = vp_convolution(grayImg, norient);
+
+    %oryantasyon için oylama yapılacak hayali görüntü imge oluşturuluyor. 
+    %Doku oryantasyon haritası( hayali imge ) oluşturulur .
+    [orientation, confidence] = vp_dominant(convolution, halfKerSize);
+    overlap = (confidence > 255*0.3);
+    orientbar = vp_orientbar(grayImg, orientation);
+    voter = vp_voter(grayImg, overlap);
+
+    %seçmen alanı (hayali imge) ile giriş imgesi üst üste birleştirilir 
+    voterarea = vp_voterarea(grayImg, voter);
+    figure(3) ; imshow(voterarea,[]);  title ('Texture Orientation Map (Hayali İmge)') ;
+    
+    %Oylama Haritasında( hayali imge ) oylamalar yapılır ve ufuk noktası tespit edilir ve kaydedilir
+    [votingMap, Vanishing_Point_X ,  Vanishing_Point_Y] = vp_vote(orientation, voter, halfKerSize);
+
+    
+  %% Ufuk noktası referans alınarak imgeyi kırpılır   
+  
+    %Tespit edilen ufuk noktası referans alınarak görüntü kırpılır. 
+    %renkli ve renksiz görüntü için ayrı ayrı bu işlemler yapılır. 
+    
+    % Satır --> Vanishing_Point_Y'den en aşşağıya kadarki kısım yeni bir matrise alınır. 
+    % Sütun --> Hepsi tekrardan yeni oluşturulan matrise alınır . 
+    cropped_gray_img = grayImg(uint8(Vanishing_Point_Y-5) : uint8(satir),:);
+    figure(4) ; imshow(cropped_gray_img); title('Cropped Gray Image');
+
+    cropped_originImg_img = originImg(uint8(Vanishing_Point_Y-5) : uint8(satir),:,:);%(y den en alta , bütün sütunlar )
+
+    %Kırpılan imgenin boyutları değişkenlere kaydedilir .  
+    [x,y] = size(cropped_gray_img);
+    
+    %Kırpılmış imgelere , Gabor filtresi uygulayabilmek için typecast uygulanır .
+    cropped_gray_img=im2double(cropped_gray_img); 
+    cropped_originImg_img=im2double(cropped_originImg_img);
+%% Kırpılan imgeye gabor filtresi uygulanır
+     
+    % 37x37 boyutunda gabor filtresi oluşturulacak şekilde parametreler belirlenir .  
+    %lambda / tetha = 1,24 olmalıdır . 
+    gamma=0.3;  
+    psi=0; %faz 
+    theta=18.2; %Boyutu etkileyen 1.parametre
+    bw=2.8; 
+    lambda=22.8; %Boyutu etkileyen 2.parametre
+    pi=180; 
+    
+    % Bütün piksel değerleri tek tek gezilerek gabor filtresi uygulanır .
+    for a=1:x  
+        for b=1:y         
+            x_theta= conv(cropped_gray_img(a,b),cos(theta))+conv(cropped_gray_img(a,b),sin(theta)); 
+            y_theta= conv( cropped_gray_img(a,b),sin(theta))+conv(cropped_gray_img(a,b),cos(theta)); 
+            output(a,b)= conv(exp(-(x_theta.^2/2*bw^2+ gamma^2*y_theta.^2/2*bw^2)),cos(2*pi/lambda*x_theta+psi)); 
+        end
+    end    
+   figure(5); imshow(output);title('Filtered Image');
+
+   
+  %% Hough transform konfigüre edilir ve uygulanır 
+     
+  
+    BW = edge(output,'canny');%Line tespiti için binary imgeye dönüştürülür görüntü .
+    [H,T,R] = hough(BW,'Theta',-90:0.5:89.5); %Tespiti istenen çizgilerin tetha aralığı belirlenir 
+    figure(6);imshow(H,[],'XData',T,'YData',R,'InitialMagnification','fit');title('Hough Transform');
+    xlabel('\theta'), ylabel('\rho');
+    axis on, axis normal, hold on;
+    P  = houghpeaks(H,5,'threshold',ceil(0.3*max(H(:))));
+    x = T(P(:,2)); y = R(P(:,1));
+    plot(x,y,'s','color','white');
+    lines = houghlines(BW,T,R,P,'FillGap',3,'MinLength',25); % çizilmesi gereken minimum line uzunlukları ayarlanır .
+    figure(7); imshow(cropped_originImg_img);title('Output Image'), hold on
+    
+    for k = 1:length(lines) 
+        %Tespit edilen çizgilerin başlangıç ve bitiş noktaları belirlenir
+        xy = [lines(k).point1; lines(k).point2];    
+        plot(xy(:,1),xy(:,2),'LineWidth',5,'Color','red');
+    end
+    toc;
